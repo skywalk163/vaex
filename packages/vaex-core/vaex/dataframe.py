@@ -5236,6 +5236,7 @@ class DataFrameLocal(DataFrame):
         return type(expression, vmin, vmax, shape)
 
     def _binner_ordinal(self, expression, ordinal_count, min_value=0):
+        expression = _ensure_string_from_expression(expression)
         type = vaex.utils.find_type_from_dtype(vaex.superagg, "BinnerOrdinal_", self.dtype(expression))
         return type(expression, ordinal_count, min_value)
 
