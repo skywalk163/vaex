@@ -496,7 +496,7 @@ class TaskAggregate(Task):
         self.aggregations.append((aggregator_descriptor, selections, [create_aggregator(i) for i in range(self.nthreads)], selection_waslist, edges, task))
         self.expressions_all.extend(aggregator_descriptor.expressions)
         self.expressions_all = list(set(self.expressions_all))
-        self.dtypes = {expr: self.df.dtype(expr) for expr in self.expressions_all}
+        self.dtypes = {expr: self.df.dtype_evaluate(expr) for expr in self.expressions_all}
         return task
 
     def map(self, thread_index, i1, i2, *blocks):

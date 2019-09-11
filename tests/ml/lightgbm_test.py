@@ -62,13 +62,13 @@ def test_lightgbm():
     class_predict = booster.predict(ds_test, copy=True)  # for coverage
     booster.fit(ds_train, ds.class_)
     class_predict = booster.predict(ds_test)
-    assert np.all(ds.col.class_ == class_predict)
+    assert np.all(ds.col.class_.values == class_predict)
 
     ds = booster.transform(ds)   # this will add the lightgbm_prediction column
     state = ds.state_get()
     ds = vaex.ml.datasets.load_iris()
     ds.state_set(state)
-    assert np.all(ds.col.class_ == ds.evaluate(ds.lightgbm_prediction))
+    assert np.all(ds.col.class_.values == ds.evaluate(ds.lightgbm_prediction))
 
 
 @pytest.mark.skipif(sys.version_info < (3, 6), reason="requires python3.6 or higher")

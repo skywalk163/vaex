@@ -71,7 +71,7 @@ class ColumnIndexed(Column):
         self.df = df
         self.indices = indices
         self.name = name
-        self.dtype = self.df.dtype(name)
+        self.dtype = self.df.dtype_evaluate(name)
         self.shape = (len(indices),)
         max_index = self.indices.max()
         if not np.ma.is_masked(max_index):
@@ -126,7 +126,7 @@ class ColumnConcatenatedLazy(Column):
     def __init__(self, dfs, column_name):
         self.dfs = dfs
         self.column_name = column_name
-        dtypes = [df.dtype(column_name) for df in dfs]
+        dtypes = [df.dtype_evaluate(column_name) for df in dfs]
         self.is_masked = any([df.is_masked(column_name) for df in dfs])
         if self.is_masked:
             self.fill_value = dfs[0].columns[self.column_name].fill_value

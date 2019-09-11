@@ -46,13 +46,13 @@ def test_catboost():
                                              features=features)
     booster.fit(ds_train, ds_train.class_)
     class_predict = booster.predict(ds_test)
-    assert np.all(ds.col.class_ == class_predict)
+    assert np.all(ds.col.class_.values == class_predict)
 
     ds = booster.transform(ds)   # this will add the catboost_prediction column
     state = ds.state_get()
     ds = vaex.ml.datasets.load_iris()
     ds.state_set(state)
-    assert np.all(ds.col.class_ == ds.evaluate(ds.catboost_prediction))
+    assert np.all(ds.col.class_.values == ds.evaluate(ds.catboost_prediction))
 
 
 def test_catboost_numerical_validation():

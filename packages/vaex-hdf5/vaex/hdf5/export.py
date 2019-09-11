@@ -147,7 +147,7 @@ def export_hdf5(dataset, path, column_names=None, byteorder="=", shuffle=False, 
                 sparse_groups[id(sparse_matrix)].append(column_name)
                 sparse_matrices[id(sparse_matrix)] = sparse_matrix
                 continue
-            dtype = dataset.dtype(column_name)
+            dtype = dataset.dtype_evaluate(column_name)
             if column_name in dataset.get_column_names(virtual=False):
                 column = dataset.columns[column_name]
                 shape = (N,) + column.shape[1:]
