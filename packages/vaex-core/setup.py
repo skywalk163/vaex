@@ -108,6 +108,8 @@ extension_superutils = Extension("vaex.superutils", [
 
 extension_superagg = Extension("vaex.superagg", [
         os.path.relpath(os.path.join(dirname, "src/superagg.cpp")),
+        os.path.relpath(os.path.join(dirname, "src/agg_hash_string.cpp")),
+        os.path.relpath(os.path.join(dirname, "src/agg_hash_primitive.cpp")),
     ],
     include_dirs=[
         get_numpy_include(), get_pybind_include(),
@@ -134,6 +136,7 @@ setup(name=name + '-core',
       zip_safe=False,
       entry_points={
           'console_scripts': ['vaex = vaex.__main__:main'],
-          'gui_scripts': ['vaexgui = vaex.__main__:main']  # sometimes in osx, you need to run with this
+          'gui_scripts': ['vaexgui = vaex.__main__:main'],  # sometimes in osx, you need to run with this
+          'vaex.dataframe.accessor': ['geo = vaex.geo:DataFrameAccessorGeo']
       }
       )

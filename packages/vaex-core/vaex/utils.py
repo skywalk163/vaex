@@ -13,6 +13,7 @@ import sys
 import time
 import warnings
 import numbers
+import keyword
 
 import numpy as np
 import progressbar
@@ -207,8 +208,6 @@ def get_private_dir(subdir=None, *extra):
         os.makedirs(path)
     return path
 
-def should_cache():
-    return os.path.exists(os.path.join(get_private_dir(), 'file-cache'))
 
 def make_list(sequence):
     if isinstance(sequence, np.ndarray):
@@ -562,6 +561,8 @@ def unlistify(waslist, *args):
 def find_valid_name(name, used=[]):
     first, rest = name[0], name[1:]
     name = re.sub("[^a-zA-Z_]", "_", first) + re.sub("[^a-zA-Z_0-9]", "_", rest)
+    if keyword.iskeyword(name):
+        name += '_'
     if name in used:
         nr = 1
         while name + ("_%d" % nr) in used:
@@ -876,8 +877,10 @@ def find_type_from_dtype(namespace, prefix, dtype, transient=True):
         postfix = str(dtype)
         if postfix == '>f8':
             postfix = 'float64'
-        if dtype.kind in "mM":
+        if dtype.kind == "M":
             postfix = "uint64"
+        if dtype.kind == "m":
+            postfix = "int64"
         # for object there is no non-native version
         if dtype.kind != 'O' and dtype.byteorder not in ["<", "=", "|"]:
             postfix += "_non_native"
@@ -893,6 +896,13 @@ def to_native_dtype(dtype):
         return dtype.newbyteorder()
     else:
         return dtype
+
+
+def to_native_array(ar):
+    if ar.dtype.byteorder not in "<=|":
+        return ar.astype(to_native_dtype(ar.dtype))
+    else:
+        return ar
 
 
 def extract_central_part(ar):

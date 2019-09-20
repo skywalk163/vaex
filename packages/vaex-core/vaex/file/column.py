@@ -1,5 +1,4 @@
 import ctypes
-from cachetools import LRUCache
 fcntl = None
 try:
     import fcntl
@@ -25,7 +24,9 @@ USE_CACHE = ast.literal_eval(os.environ.get('VAEX_USE_COLUMN_FILE_CACHE', 'False
 GB = 1024**3
 # in GB
 CACHE_SIZE =  ast.literal_eval(os.environ.get('VAEX_COLUMN_FILE_CACHE_SIZE', '10'))
-cache = LRUCache(maxsize=CACHE_SIZE*GB, getsizeof=getsizeof)
+if USE_CACHE:
+    from cachetools import LRUCache
+    cache = LRUCache(maxsize=CACHE_SIZE*GB, getsizeof=getsizeof)
 cache_lock = threading.RLock()
 F_NOCACHE = 48
 
@@ -58,11 +59,18 @@ class ColumnFile(vaex.column.Column):
     def __len__(self):
         return self.length
 
+    @property
+    def nbytes(self):
+        return self.dtype.itemsize * self.length
+
     def trim(self, i1, i2):
         itemsize = self.dtype.itemsize
         byte_offset = self.byte_offset + i1 * itemsize
         length = i2 - i1
         return ColumnFile(self.file, byte_offset, length, self.dtype, self.write, path=self.path)
+
+    def to_numpy(self):
+        return self[0:self.length]
 
     def __setitem__(self, slice, values):
         assert self.write, "trying to write to non-writable column"

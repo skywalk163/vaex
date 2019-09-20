@@ -107,6 +107,11 @@ class Hdf5MemoryMapped(DatasetMemoryMapped):
                                         h5dataset = column
                 if h5dataset is None:
                     raise ValueError('column {} not found'.format(column_name))
+
+                aliases = [key for key, value in self._column_aliases.items() if value == column_name]
+                aliases.sort()
+                if aliases:
+                    h5dataset.attrs['alias'] = aliases[0]
                 for name, values in [("ucd", self.ucds), ("unit", self.units), ("description", self.descriptions)]:
                     if column_name in values:
                         value = ensure_string(values[column_name], cast=True)
@@ -224,9 +229,10 @@ class Hdf5MemoryMapped(DatasetMemoryMapped):
 
     def _map_hdf5_array(self, data, mask=None):
         offset = data.id.get_offset()
+        if len(data) == 0 and offset is None:
+            offset = 0 # we don't care about the offset for empty arrays
         if offset is None:  # non contiguous array, chunked arrays etc
             # we don't support masked in this case
-            raise "try"
             column = ColumnNumpyLike(data)
             return column
         else:
@@ -239,7 +245,7 @@ class Hdf5MemoryMapped(DatasetMemoryMapped):
                     if dtype == 'utf32':
                         dtype = np.dtype('U' + str(data.attrs['dlength']))
             #self.addColumn(column_name, offset, len(data), dtype=dtype)
-            array = self._map_array(data.id.get_offset(), dtype=dtype, length=len(data))
+            array = self._map_array(offset, dtype=dtype, length=len(data))
             if mask is not None:
                 mask_array = self._map_hdf5_array(mask)
                 return np.ma.array(array, mask=mask_array, shrink=False)
@@ -292,6 +298,8 @@ class Hdf5MemoryMapped(DatasetMemoryMapped):
                 column = h5columns[column_name]
                 if "ucd" in column.attrs:
                     self.ucds[column_name] = ensure_string(column.attrs["ucd"])
+                if "alias" in column.attrs:
+                    self._column_aliases[ensure_string(column.attrs["alias"])] = column_name
                 if "description" in column.attrs:
                     self.descriptions[column_name] = ensure_string(column.attrs["description"])
                 if "unit" in column.attrs:
@@ -344,7 +352,8 @@ class Hdf5MemoryMapped(DatasetMemoryMapped):
                             transposed = shape[1] < shape[0]
                             self.addRank1(column_name, offset, shape[1], length1=shape[0], dtype=data.dtype, stride=1, stride1=1, transposed=transposed)
         all_columns = dict(**self.columns)
-        # print(all_columns, column_order)
+        # in case the column_order refers to non-existing columns
+        column_order = [k for k in column_order if k in all_columns]
         self.column_names = []
         for name in column_order:
             self.columns[name] = all_columns.pop(name)

@@ -17,21 +17,22 @@ def cwd(path):
 
 # inspired by https://blog.shazam.com/python-microlibs-5be9461ad979
 
-packages = ['vaex-core', 'vaex-viz', 'vaex-hdf5', 'vaex-server', 'vaex-astro', 'vaex-ui', 'vaex-jupyter', 'vaex-distributed', 'vaex-arrow']
+packages = ['vaex-core', 'vaex-viz', 'vaex-hdf5', 'vaex-server', 'vaex-astro', 'vaex-ui', 'vaex-jupyter', 'vaex-ml', 'vaex-distributed', 'vaex-arrow', 'vaex-meta']
 import os
 on_rtd = os.environ.get('READTHEDOCS', None) == 'True'
 
 
 class DevelopCmd(develop):
     def run(self):
+        relative = os.path.abspath(os.path.join('packages', 'vaex-core', 'vaex'))
         for package in packages:
             with cwd(os.path.join('packages', package)):
                 err = os.system('python -m pip install -e .')
                 if err:
                     sys.exit(err)
-            # we need to make symbolic links from vaex-core/vaex/<name> to vaex-<name>/vaex/<name
+            # we need to make symbolic links from vaex-core/vaex/<name> to vaex-<name>/vaex/<name>
             # otherwise development install do not work
-            if package != 'vaex-core':
+            if package not in ['vaex-core', 'vaex-arrow']:
                 name = package.split('-')[1]
                 relative = os.path.abspath(os.path.join('packages', 'vaex-core', 'vaex'))
                 source = os.path.abspath(os.path.join('packages', package, 'vaex', name))

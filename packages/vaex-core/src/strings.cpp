@@ -98,6 +98,8 @@ class StringSequenceBase : public StringSequence {
     }
     virtual StringSequenceBase* capitalize();
     virtual StringSequenceBase* concat(StringSequenceBase* other);
+    virtual StringSequenceBase* concat2(std::string other);
+    virtual StringSequenceBase* concat_reverse(std::string other);
     virtual StringSequenceBase* pad(int width, std::string fillchar, bool left, bool right);
     virtual StringSequenceBase* lower();
     virtual StringSequenceBase* upper();
@@ -271,7 +273,7 @@ class StringSequenceBase : public StringSequence {
         }
         return std::move(matches);
     }
-     py::object match(const std::string pattern) {
+    py::object match(const std::string pattern) {
          // same as search, but stricter (full regex should match)
         py::array_t<bool> matches(length);
         auto m = matches.mutable_unchecked<1>();
@@ -295,6 +297,41 @@ class StringSequenceBase : public StringSequence {
                     auto str = view(i);
                     bool match = regex_match(str, rex);
                 #endif
+                m(i) = match;
+            }
+        }
+        return std::move(matches);
+    }
+    py::object equals(const std::string other) {
+        py::array_t<bool> matches(length);
+        auto m = matches.mutable_unchecked<1>();
+        {
+            py::gil_scoped_release release;
+            for(size_t i = 0; i < length; i++) {
+#if defined(_MSC_VER)
+                auto str = get(i);
+                bool match = str == other;
+#else
+                auto str = view(i);
+                bool match = str == other;
+#endif
+                m(i) = match;
+            }
+        }
+        return std::move(matches);
+    }
+    py::object equals2(const StringSequence* others) {
+        py::array_t<bool> matches(length);
+        if(length != others->length) {
+            throw pybind11::index_error("equals should have equal string array lengths");
+        }
+        auto m = matches.mutable_unchecked<1>();
+        {
+            py::gil_scoped_release release;
+            for(size_t i = 0; i < length; i++) {
+                auto str = view(i);
+                auto other = others->view(i);
+                bool match = str == other;
                 m(i) = match;
             }
         }
@@ -1222,6 +1259,53 @@ StringSequenceBase* StringSequenceBase::concat(StringSequenceBase* other) {
     return sl;
 }
 
+
+StringSequenceBase* StringSequenceBase::concat2(std::string other) {
+    py::gil_scoped_release release;
+    size_t other_length = other.length();
+    StringList64* sl = new StringList64(this->byte_size() + other_length * length, length);
+    size_t byte_offset = 0;
+    for(size_t i = 0; i < length; i++) {
+        sl->indices[i] = byte_offset;
+        if(this->is_null(i)) {
+            if(sl->null_bitmap == nullptr)
+                sl->add_null_bitmap();
+            sl->set_null(i);
+        } else {
+            string_view str1 = this->view(i);
+            std::copy(str1.begin(), str1.end(), sl->bytes + byte_offset);
+            byte_offset += str1.length();
+            std::copy(other.begin(), other.end(), sl->bytes + byte_offset);
+            byte_offset += other_length;
+        }
+    }
+    sl->indices[length] = byte_offset;
+    return sl;
+}
+
+StringSequenceBase* StringSequenceBase::concat_reverse(std::string other) {
+    py::gil_scoped_release release;
+    size_t other_length = other.length();
+    StringList64* sl = new StringList64(this->byte_size() + other_length * length, length);
+    size_t byte_offset = 0;
+    for(size_t i = 0; i < length; i++) {
+        sl->indices[i] = byte_offset;
+        if(this->is_null(i)) {
+            if(sl->null_bitmap == nullptr)
+                sl->add_null_bitmap();
+            sl->set_null(i);
+        } else {
+            std::copy(other.begin(), other.end(), sl->bytes + byte_offset);
+            byte_offset += other_length;
+            string_view str1 = this->view(i);
+            std::copy(str1.begin(), str1.end(), sl->bytes + byte_offset);
+            byte_offset += str1.length();
+        }
+    }
+    sl->indices[length] = byte_offset;
+    return sl;
+}
+
 StringSequenceBase* StringSequenceBase::repeat(int64_t repeats) {
     py::gil_scoped_release release;
     StringList64* sl = new StringList64(this->byte_size() * repeats, length);
@@ -1750,7 +1834,7 @@ void add_string_list(Module m, Base& base, const char* class_name) {
         )
         // same ctor, duplicate code, cannot make null_bitmap accept None
         .def(py::init([](py::buffer bytes, py::array_t<typename StringList::index_type, py::array::c_style>& indices, size_t string_count, size_t offset,
-                py::array_t<uint8_t, py::array::c_style> null_bitmap) {
+                py::array_t<uint8_t, py::array::c_style> null_bitmap, size_t null_offset) {
                 py::buffer_info bytes_info = bytes.request();
                 py::buffer_info indices_info = indices.request();
                 if(bytes_info.ndim != 1) {
@@ -1768,7 +1852,7 @@ void add_string_list(Module m, Base& base, const char* class_name) {
                     null_bitmap_ptr = (uint8_t*)null_bitmap_info.ptr;
                 }
                 return new StringList((char*)bytes_info.ptr, bytes_info.shape[0],
-                                   (typename StringList::index_type*)indices_info.ptr, string_count, offset, null_bitmap_ptr
+                                   (typename StringList::index_type*)indices_info.ptr, string_count, offset, null_bitmap_ptr, null_offset
                                   );
             }), py::keep_alive<1, 2>(), py::keep_alive<1, 3>() // keep a reference to the ndarrays
         )
@@ -1873,6 +1957,34 @@ StringList64* format(py::array_t<T, py::array::c_style> values_, const char* for
     }
 }
 
+StringList64* format_string(StringSequence* values, const char* format) {
+    size_t length = values->length;
+    {
+        py::gil_scoped_release release;
+        StringList64* sl = new StringList64(length*2, length);
+        size_t byte_offset = 0;
+        for(size_t i = 0; i < length; i++) {
+            sl->indices[i] = byte_offset;
+            bool done = false;
+            int ret;
+            while(!done) {
+                int64_t bytes_left = sl->byte_length - byte_offset;
+                auto value = values->get(i);
+                ret = snprintf(sl->bytes + byte_offset, bytes_left, format, value.c_str());
+                if(ret < 0) {
+                    throw std::runtime_error("Invalid format");
+                } else if(ret < bytes_left) {
+                    done = true;
+                    byte_offset += strlen(sl->bytes + byte_offset);
+                } else {
+                    sl->grow();
+                }
+            }
+        }
+        sl->indices[length] = byte_offset;
+        return sl;
+    }
+}
 
 PYBIND11_MODULE(superstrings, m) {
     _import_array();
@@ -1893,6 +2005,8 @@ PYBIND11_MODULE(superstrings, m) {
         .def("tolist", &StringSequenceBase::tolist)
         .def("capitalize", &StringSequenceBase::capitalize, py::keep_alive<0, 1>())
         .def("concat", &StringSequenceBase::concat)
+        .def("concat_reverse", &StringSequenceBase::concat_reverse)
+        .def("concat", &StringSequenceBase::concat2)
         .def("pad", &StringSequenceBase::pad)
         .def("search", &StringSequenceBase::search, "Tests if strings contains pattern", py::arg("pattern"), py::arg("regex"))//, py::call_guard<py::gil_scoped_release>())
         .def("count", &StringSequenceBase::count, "Count occurrences of pattern", py::arg("pattern"), py::arg("regex"))
@@ -1901,6 +2015,8 @@ PYBIND11_MODULE(superstrings, m) {
         .def("find", &StringSequenceBase::find)
         .def("lower", &StringSequenceBase::lower)
         .def("match", &StringSequenceBase::match, "Tests if strings matches regex", py::arg("pattern"))
+        .def("equals", &StringSequenceBase::equals, "Tests if strings are equal")
+        .def("equals", &StringSequenceBase::equals2, "Tests if strings are equal")
         .def("lstrip", &StringSequenceBase::lstrip)
         .def("rstrip", &StringSequenceBase::rstrip)
         .def("repeat", &StringSequenceBase::repeat)
@@ -1990,6 +2106,25 @@ PYBIND11_MODULE(superstrings, m) {
         ;
     m.def("to_string", &to_string<float>);
     m.def("to_string", &to_string<double>);
+    m.def("to_string", &to_string<int64_t>);
+    m.def("to_string", &to_string<int32_t>);
+    m.def("to_string", &to_string<int16_t>);
+    m.def("to_string", &to_string<int8_t>);
+    m.def("to_string", &to_string<uint64_t>);
+    m.def("to_string", &to_string<uint32_t>);
+    m.def("to_string", &to_string<uint16_t>);
+    m.def("to_string", &to_string<uint8_t>);
+    m.def("to_string", &to_string<bool>);
     m.def("format", &format<float>);
     m.def("format", &format<double>);
+    m.def("format", &format<int64_t>);
+    m.def("format", &format<int32_t>);
+    m.def("format", &format<int16_t>);
+    m.def("format", &format<int8_t>);
+    m.def("format", &format<uint64_t>);
+    m.def("format", &format<uint32_t>);
+    m.def("format", &format<uint16_t>);
+    m.def("format", &format<uint8_t>);
+    m.def("format", &format<bool>);
+    m.def("format", &format_string);
 }
